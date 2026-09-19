@@ -402,18 +402,23 @@
           }
         (accesso aperto: chiunque abbia il link puo' leggere/scrivere - non condividere il link pubblicamente)
   ------------------------------------------------- */
-  var firebaseConfig = {
-    apiKey: "INCOLLA_QUI",
-    authDomain: "INCOLLA_QUI.firebaseapp.com",
-    projectId: "INCOLLA_QUI",
-    storageBucket: "INCOLLA_QUI.appspot.com",
-    messagingSenderId: "INCOLLA_QUI",
-    appId: "INCOLLA_QUI"
-  };
-  function firebaseConfigLooksReal(){
-    return !!(firebaseConfig.apiKey && firebaseConfig.apiKey.indexOf('INCOLLA_QUI')===-1 &&
-      firebaseConfig.projectId && firebaseConfig.projectId.indexOf('INCOLLA_QUI')===-1);
-  }
+ // Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyDY-xK_nlf6v8ajdcCjZraUY5q7RPCA8-8",
+  authDomain: "travel-planning-91eed.firebaseapp.com",
+  projectId: "travel-planning-91eed",
+  storageBucket: "travel-planning-91eed.firebasestorage.app",
+  messagingSenderId: "693972567186",
+  appId: "1:693972567186:web:ed1d49e72673cfb146124b"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
 
   /* ---------------- constants ---------------- */
   var STOP_TYPES = [
