@@ -848,12 +848,35 @@
         '<div class="field"><label>Ora</label><input type="time" name="time" value="'+esc(s.time||'')+'"></div>'+
         '<div class="field"><label>Tipo</label><select name="type">'+opts+'</select></div>'+
         '<div class="field"><label>Titolo</label><input type="text" name="title" value="'+esc(s.title||'')+'" placeholder="es. Castello di Osaka" required></div>'+
+        '<div class="field" style="grid-column:1/-1;"><label>Link Google Maps <span class="field-hint">incolla il link del posto e compilo io lat/lon</span></label><input type="text" name="mapslink" placeholder="https://www.google.com/maps/place/..." data-action-input="parse-maps-link"></div>'+
         '<div class="field"><label>Latitudine <span class="field-hint">opz., per la mappa</span></label><input type="number" step="any" name="lat" value="'+(s.lat!=null?s.lat:'')+'"></div>'+
         '<div class="field"><label>Longitudine <span class="field-hint">opz., per la mappa</span></label><input type="number" step="any" name="lon" value="'+(s.lon!=null?s.lon:'')+'"></div>'+
       '</div>'+
       '<div class="field" style="margin-top:10px;"><label>Note</label><textarea name="notes">'+esc(s.notes||'')+'</textarea></div>'+
       '<div class="form-actions"><button type="button" class="btn btn-ghost" data-action="cancel-form">Annulla</button><button type="submit" class="btn btn-primary">'+(editing?'Salva modifiche':'Aggiungi tappa')+'</button></div>'+
     '</form>';
+  }
+
+  function parseGoogleMapsLink(url){
+    if(!url) return null;
+    url = String(url).trim();
+    if(!url) return null;
+    try{ url = decodeURIComponent(url); }catch(e){}
+    var m;
+    m = url.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+    if(m) return {lat:parseFloat(m[1]), lon:parseFloat(m[2])};
+    m = url.match(/[?&](?:q|query)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/);
+    if(m) return {lat:parseFloat(m[1]), lon:parseFloat(m[2])};
+    m = url.match(/[?&]ll=(-?\d+\.\d+),\s*(-?\d+\.\d+)/);
+    if(m) return {lat:parseFloat(m[1]), lon:parseFloat(m[2])};
+    m = url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+    if(m) return {lat:parseFloat(m[1]), lon:parseFloat(m[2])};
+    m = url.match(/^(-?\d{1,3}\.\d+),\s*(-?\d{1,3}\.\d+)$/);
+    if(m) return {lat:parseFloat(m[1]), lon:parseFloat(m[2])};
+    return null;
+  }
+  function isShortGoogleMapsLink(url){
+    return /(maps\.app\.goo\.gl|goo\.gl\/maps|g\.co\/)/i.test(url||'');
   }
 
   var leafletMap = null;
@@ -1213,6 +1236,24 @@
       case 'delete-check': dbCall(function(){ return tripSub(current.trip.id,'checklist').doc(id).delete(); }, 'eliminazione voce checklist'); break;
       case 'reload-page': location.reload(); break;
       case 'export-backup': exportBackup(); break;
+    }
+  });
+
+  document.addEventListener('input', function(e){
+    if(e.target.matches('[data-action-input="parse-maps-link"]')){
+      var val = e.target.value;
+      if(!val.trim()) return;
+      var coords = parseGoogleMapsLink(val);
+      var form = e.target.closest('form');
+      if(coords && form){
+        var latInput = form.querySelector('[name="lat"]');
+        var lonInput = form.querySelector('[name="lon"]');
+        if(latInput) latInput.value = coords.lat;
+        if(lonInput) lonInput.value = coords.lon;
+        showToast('Coordinate trovate: '+coords.lat.toFixed(5)+', '+coords.lon.toFixed(5));
+      } else if(isShortGoogleMapsLink(val)){
+        showToast('Questo e\' un link abbreviato: aprilo nel browser, poi copia il link completo dalla barra degli indirizzi e incollalo qui.', true);
+      }
     }
   });
 
