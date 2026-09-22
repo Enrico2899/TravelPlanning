@@ -328,6 +328,9 @@
   .tag-card .fav[aria-pressed="true"]{color:var(--accent);}
   .tag-card .fav svg{width:17px; height:17px;}
   .tag-card h4{font-size:15px; padding-right:24px;}
+  .tag-card .transport-route{display:flex; align-items:center; gap:6px; font-weight:600; font-size:14.5px; padding-right:24px;}
+  .tag-card .transport-route svg{width:16px; height:16px; color:var(--accent-ink); flex:none;}
+  .tag-card .transport-route .route-arrow{color:var(--ink-soft); font-weight:400;}
   .tag-card .nights{font-size:12px; color:var(--ink-soft); margin-top:2px;}
   .tag-card .dates{font-family:var(--font-mono); font-size:12px; margin-top:8px; padding-top:8px; border-top:1px dashed var(--line-strong);}
   .tag-card .price{font-family:var(--font-mono); font-weight:600; margin-top:4px;}
@@ -430,6 +433,17 @@
     {id:'attivita', label:'Attività'},
     {id:'altro', label:'Altro'}
   ];
+  var TRANSPORT_TYPES = [
+    {id:'volo', label:'Volo', icon:'plane'},
+    {id:'treno', label:'Treno', icon:'train'},
+    {id:'bus', label:'Bus', icon:'ticket'},
+    {id:'traghetto', label:'Traghetto', icon:'pin'},
+    {id:'altro', label:'Altro', icon:'compass'}
+  ];
+  function transportIcon(type){
+    var t = TRANSPORT_TYPES.find(function(x){return x.id===type;});
+    return (t||TRANSPORT_TYPES[TRANSPORT_TYPES.length-1]).icon;
+  }
   var CHECK_CATEGORIES = [
     {id:'documenti', label:'Documenti'},
     {id:'bagaglio', label:'Bagaglio'},
@@ -459,7 +473,8 @@
     users:'<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.4"/><path d="M15.5 14a5 5 0 0 1 5.5 5"/>',
     filter:'<path d="M4 5h16M7 12h10M10 19h4"/>',
     download:'<path d="M12 3v12M7 10l5 5 5-5M5 21h14"/>',
-    upload:'<path d="M12 21V9M7 14l5-5 5 5M5 3h14"/>'
+    upload:'<path d="M12 21V9M7 14l5-5 5 5M5 3h14"/>',
+    train:'<rect x="5" y="3" width="14" height="12" rx="4"/><path d="M9 7h6M5 11h14M8 16l-2 4M16 16l2 4"/>'
   };
   function icon(name, cls){ return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" class="'+(cls||'')+'" aria-hidden="true">'+(ICONS[name]||'')+'</svg>'; }
 
@@ -468,7 +483,7 @@
   var db = null, dbAvailable = null, dbErrorHint = '';
   var trips = [];
   var tripsLoaded = false;
-  var current = { trip:null, stops:[], expenses:[], lodging:[], checklist:[], loaded:false };
+  var current = { trip:null, stops:[], expenses:[], lodging:[], checklist:[], transport:[], loaded:false };
   var unsubs = [];
 
   function esc(s){
@@ -563,10 +578,10 @@
   }
 
   function loadTrip(tripId){
-    current = { trip:null, stops:[], expenses:[], lodging:[], checklist:[], loaded:false };
+    current = { trip:null, stops:[], expenses:[], lodging:[], checklist:[], transport:[], loaded:false };
     var t = trips.find(function(tr){return tr.id===tripId;});
     current.trip = t || null;
-    var subs = {stops:'stops', expenses:'expenses', lodging:'lodging', checklist:'checklist'};
+    var subs = {stops:'stops', expenses:'expenses', lodging:'lodging', checklist:'checklist', transport:'transport'};
     var pending = Object.keys(subs).length;
     Object.keys(subs).forEach(function(key){
       unsubs.push(tripSub(tripId, subs[key]).onSnapshot(function(snap){
@@ -757,6 +772,9 @@
       '<div class="trip-dates-row mono">'+fmtRange(t.startDate,t.endDate)+'</div>'+
       '</div>'+
       '<div class="trip-header-actions">'+
+        '<label class="btn" style="cursor:pointer;" title="Importa tappe, trasporti o alloggi da un file JSON in questo viaggio">'+icon('upload')+'Importa dati'+
+          '<input type="file" accept="application/json" data-action-change="import-trip-data" style="display:none;">'+
+        '</label>'+
         '<button class="btn" data-action="edit-trip" data-id="'+t.id+'">'+icon('edit')+'Modifica</button>'+
         '<button class="btn btn-danger" data-action="delete-trip" data-id="'+t.id+'">'+icon('trash')+'Elimina</button>'+
       '</div>'+
@@ -770,6 +788,7 @@
     '</div>'+
     '<div class="tab-bar" role="tablist">'+
       tabBtn('itinerario','Itinerario','pin')+
+      tabBtn('trasporti','Trasporti','plane')+
       tabBtn('budget','Budget','ticket')+
       tabBtn('alloggi','Alloggi','bed')+
       tabBtn('checklist','Checklist','check')+
@@ -780,6 +799,7 @@
       html += '<p class="empty-hint">Caricamento dati del viaggio…</p>';
     } else {
       if(state.tab==='itinerario') html += renderItinerario(t);
+      else if(state.tab==='trasporti') html += renderTrasporti(t);
       else if(state.tab==='budget') html += renderBudget(t);
       else if(state.tab==='alloggi') html += renderAlloggi(t);
       else html += renderChecklist(t);
@@ -1069,6 +1089,57 @@
     '</form>';
   }
 
+  /* ----- trasporti (spostamenti tra città: voli, treni, ...) ----- */
+  function renderTrasporti(t){
+    var html = '<div class="panel"><div class="panel-head"><h2>Trasporti principali</h2><button class="btn btn-sm" data-action="show-form" data-value="transport">'+icon('plus')+'Aggiungi trasporto</button></div>';
+    html += '<p class="empty-hint" style="margin-bottom:14px;">Voli, treni e altri spostamenti tra città. Gli spostamenti dentro una città (es. metro) si aggiungono invece come tappa "Trasporto" nell\'Itinerario.</p>';
+    html += renderTransportForm(state.editTransport);
+    if(current.transport.length===0){
+      html += '<p class="empty-hint">Nessun trasporto ancora registrato.</p>';
+    } else {
+      var sorted = current.transport.slice().sort(function(a,b){
+        return (String(a.date||'')+String(a.departTime||'')).localeCompare(String(b.date||'')+String(b.departTime||''));
+      });
+      html += '<div class="lodging-grid">';
+      sorted.forEach(function(tr){
+        html += '<div class="tag-card">'+
+          '<div class="transport-route">'+icon(transportIcon(tr.type))+'<span>'+esc(tr.from||'')+'</span><span class="route-arrow">→</span><span>'+esc(tr.to||'')+'</span></div>'+
+          '<div class="dates mono">'+(tr.date?fmtDate(tr.date,{day:'numeric',month:'short'}):'?')+
+            (tr.departTime?' · '+esc(tr.departTime):'')+(tr.arriveTime?' → '+esc(tr.arriveTime):'')+'</div>'+
+          (tr.carrier?'<div class="notes">'+esc(tr.carrier)+'</div>':'')+
+          (tr.price?'<div class="price">'+fmtMoney(tr.price)+'</div>':'')+
+          (tr.notes?'<div class="notes">'+esc(tr.notes)+'</div>':'')+
+          (tr.link?'<a class="link" href="'+esc(tr.link)+'" target="_blank" rel="noopener noreferrer">'+icon('link')+'Apri link</a>':'')+
+          '<div class="tag-card-actions"><button class="icon-btn" data-action="edit-transport" data-id="'+tr.id+'">'+icon('edit')+'</button><button class="icon-btn" data-action="delete-transport" data-id="'+tr.id+'">'+icon('trash')+'</button></div>'+
+        '</div>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+  function renderTransportForm(editId){
+    var editing = editId ? current.transport.find(function(x){return x.id===editId;}) : null;
+    if(state.formOpen!=='transport' && !editing) return '';
+    var tr = editing || {};
+    var opts = TRANSPORT_TYPES.map(function(o){ return '<option value="'+o.id+'"'+(tr.type===o.id?' selected':'')+'>'+o.label+'</option>'; }).join('');
+    return '<form class="inline-form" data-action-submit="save-transport" data-id="'+(editing?editing.id:'')+'">'+
+      '<div class="field-grid">'+
+        '<div class="field"><label>Tipo</label><select name="type">'+opts+'</select></div>'+
+        '<div class="field"><label>Da</label><input type="text" name="from" value="'+esc(tr.from||'')+'" required placeholder="es. Venezia"></div>'+
+        '<div class="field"><label>A</label><input type="text" name="to" value="'+esc(tr.to||'')+'" required placeholder="es. Roma"></div>'+
+        '<div class="field"><label>Data</label><input type="date" name="date" value="'+esc(tr.date||'')+'"></div>'+
+        '<div class="field"><label>Partenza</label><input type="time" name="departTime" value="'+esc(tr.departTime||'')+'"></div>'+
+        '<div class="field"><label>Arrivo</label><input type="time" name="arriveTime" value="'+esc(tr.arriveTime||'')+'"></div>'+
+        '<div class="field"><label>Compagnia / n&deg;</label><input type="text" name="carrier" value="'+esc(tr.carrier||'')+'" placeholder="es. easyJet EZY123"></div>'+
+        '<div class="field"><label>Prezzo (€)</label><input type="number" step="0.01" min="0" name="price" value="'+(tr.price!=null?tr.price:'')+'"></div>'+
+        '<div class="field"><label>Link biglietto</label><input type="url" name="link" value="'+esc(tr.link||'')+'" placeholder="https://…"></div>'+
+      '</div>'+
+      '<div class="field" style="margin-top:10px;"><label>Note</label><textarea name="notes">'+esc(tr.notes||'')+'</textarea></div>'+
+      '<div class="form-actions"><button type="button" class="btn btn-ghost" data-action="cancel-form">Annulla</button><button type="submit" class="btn btn-primary">'+(editing?'Salva modifiche':'Aggiungi trasporto')+'</button></div>'+
+    '</form>';
+  }
+
   /* ----- checklist ----- */
   function renderChecklist(t){
     var html = '<div class="panel"><div class="panel-head"><h2>Checklist</h2></div><div class="check-cols">';
@@ -1129,7 +1200,7 @@
   }
 
   /* ---------------- backup export/import ---------------- */
-  var SUBCOLLECTIONS = ['stops','expenses','lodging','checklist'];
+  var SUBCOLLECTIONS = ['stops','expenses','lodging','checklist','transport'];
   function exportBackup(){
     if(!db){ showToast('Il salvataggio non è disponibile: niente da esportare.', true); return; }
     showToast('Preparazione backup…');
@@ -1194,6 +1265,45 @@
     reader.readAsText(file);
   }
 
+  function importTripData(file){
+    if(!file) return;
+    if(!current.trip){ showToast('Apri prima un viaggio.', true); return; }
+    if(!db){ showToast('Il salvataggio non è disponibile: impossibile importare.', true); return; }
+    var reader = new FileReader();
+    reader.onload = function(){
+      var payload;
+      try{
+        payload = JSON.parse(String(reader.result));
+      } catch(err){
+        console.error('import trip data parse error', err);
+        showToast('File non valido: non è un JSON corretto.', true);
+        return;
+      }
+      var keys = ['stops','transport','lodging','checklist'];
+      var counts = {};
+      var total = 0;
+      keys.forEach(function(k){ counts[k] = Array.isArray(payload[k]) ? payload[k].length : 0; total += counts[k]; });
+      if(total===0){ showToast('Il file non contiene tappe, trasporti, alloggi o voci checklist da importare.', true); return; }
+      var summary = counts.stops+' tappe, '+counts.transport+' trasporti, '+counts.lodging+' alloggi, '+counts.checklist+' checklist';
+      if(!confirm('Importare '+total+' elementi ('+summary+') in "'+(current.trip.name||'questo viaggio')+'"?')) return;
+      var jobs = [];
+      keys.forEach(function(sub){
+        (payload[sub]||[]).forEach(function(item){
+          var copy = Object.assign({}, item);
+          delete copy.id;
+          jobs.push(tripSub(current.trip.id, sub).add(copy));
+        });
+      });
+      Promise.all(jobs).then(function(){
+        showToast('Import completato: '+total+' elementi aggiunti.');
+      }).catch(function(err){
+        console.error('import trip data error', err);
+        showToast('Errore durante l\'importazione.', true);
+      });
+    };
+    reader.readAsText(file);
+  }
+
   /* ---------------- event delegation ---------------- */
   document.addEventListener('click', function(e){
     var el = e.target.closest('[data-action]');
@@ -1215,9 +1325,9 @@
         if(action==='close-modal-overlay' && e.target!==el) return;
         state.modal=null; render(); break;
       case 'filter': state.filter = el.dataset.value; render(); break;
-      case 'tab': state.tab = el.dataset.value; state.formOpen=null; state.editStop=null; state.editExpense=null; state.editLodging=null; render(); break;
-      case 'show-form': state.formOpen = el.dataset.value; state.editStop=null; state.editExpense=null; state.editLodging=null; render(); break;
-      case 'cancel-form': state.formOpen = null; state.editStop=null; state.editExpense=null; state.editLodging=null; render(); break;
+      case 'tab': state.tab = el.dataset.value; state.formOpen=null; state.editStop=null; state.editExpense=null; state.editLodging=null; state.editTransport=null; render(); break;
+      case 'show-form': state.formOpen = el.dataset.value; state.editStop=null; state.editExpense=null; state.editLodging=null; state.editTransport=null; render(); break;
+      case 'cancel-form': state.formOpen = null; state.editStop=null; state.editExpense=null; state.editLodging=null; state.editTransport=null; render(); break;
       case 'remove-participant': {
         var parts = (current.trip.participants||[]).filter(function(p){return p!==el.dataset.name;});
         updateTripField({participants:parts}); break;
@@ -1228,6 +1338,8 @@
       case 'delete-expense': dbCall(function(){ return tripSub(current.trip.id,'expenses').doc(id).delete(); }, 'eliminazione spesa'); break;
       case 'edit-lodging': state.editLodging = id; render(); break;
       case 'delete-lodging': dbCall(function(){ return tripSub(current.trip.id,'lodging').doc(id).delete(); }, 'eliminazione alloggio'); break;
+      case 'edit-transport': state.editTransport = id; render(); break;
+      case 'delete-transport': dbCall(function(){ return tripSub(current.trip.id,'transport').doc(id).delete(); }, 'eliminazione trasporto'); break;
       case 'toggle-fav': {
         var l = current.lodging.find(function(x){return x.id===id;});
         dbCall(function(){ return tripSub(current.trip.id,'lodging').doc(id).update({favorite: !(l&&l.favorite)}); }, 'preferito alloggio');
@@ -1265,6 +1377,11 @@
     if(e.target.matches('[data-action-change="import-backup"]')){
       var file = e.target.files && e.target.files[0];
       importBackup(file);
+      e.target.value = '';
+    }
+    if(e.target.matches('[data-action-change="import-trip-data"]')){
+      var file2 = e.target.files && e.target.files[0];
+      importTripData(file2);
       e.target.value = '';
     }
   });
@@ -1350,6 +1467,27 @@
           return tripSub(current.trip.id,'lodging').add(Object.assign({favorite:false}, data));
         }, 'salvataggio alloggio');
         state.formOpen=null; state.editLodging=null; render();
+        break;
+      }
+      case 'save-transport': {
+        var data = {
+          type: String(fd.get('type')||'altro'),
+          from: String(fd.get('from')||'').trim(),
+          to: String(fd.get('to')||'').trim(),
+          date: String(fd.get('date')||'') || null,
+          departTime: String(fd.get('departTime')||''),
+          arriveTime: String(fd.get('arriveTime')||''),
+          carrier: String(fd.get('carrier')||'').trim(),
+          price: fd.get('price')?parseFloat(fd.get('price')):null,
+          link: String(fd.get('link')||'').trim(),
+          notes: String(fd.get('notes')||'').trim()
+        };
+        dbCall(function(){
+          var id = form.dataset.id;
+          if(id) return tripSub(current.trip.id,'transport').doc(id).update(data);
+          return tripSub(current.trip.id,'transport').add(data);
+        }, 'salvataggio trasporto');
+        state.formOpen=null; state.editTransport=null; render();
         break;
       }
       case 'add-check': {
